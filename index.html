@@ -290,7 +290,7 @@
       <option value="10">近 10 年</option>
       <option value="20">近 20 年</option>
     </select>
-    <button class="btn btn-primary" id="load-btn">重新整理</button>
+    <span style="font-size:0.78rem; color:var(--text-muted);">資料每日自動更新</span>
   </div>
 </header>
 
@@ -459,7 +459,6 @@ const charts = {};
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
 const yearSelect   = document.getElementById('year-range');
-const loadBtn      = document.getElementById('load-btn');
 const statusText   = document.getElementById('status-text');
 const spinner      = document.getElementById('spinner');
 const errorBanner  = document.getElementById('error-banner');
@@ -655,8 +654,6 @@ async function loadAll() {
 function setLoading(isLoading, msg) {
   spinner.style.display = isLoading ? 'block' : 'none';
   statusText.textContent = msg;
-  loadBtn.disabled = isLoading;
-  loadBtn.textContent = isLoading ? '載入中…' : '重新整理';
 }
 
 function showError(msg) {
@@ -670,7 +667,6 @@ function hideError() {
 
 // ── Init ──────────────────────────────────────────────────────────────────
 buildCards();
-loadBtn.addEventListener('click', loadAll);
 yearSelect.addEventListener('change', loadAll);
 requestAnimationFrame(() => loadAll());
 </script>
