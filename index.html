@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>美國經濟指標儀表板</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3347;
+      --text: #e2e8f0;
+      --text-muted: #8892a4;
+      --leading: #38bdf8;
+      --leading-bg: rgba(56, 189, 248, 0.08);
+      --leading-border: rgba(56, 189, 248, 0.3);
+      --coincident: #34d399;
+      --coincident-bg: rgba(52, 211, 153, 0.08);
+      --coincident-border: rgba(52, 211, 153, 0.3);
+      --lagging: #fb923c;
+      --lagging-bg: rgba(251, 146, 60, 0.08);
+      --lagging-border: rgba(251, 146, 60, 0.3);
+      --error: #f87171;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .header-left h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .header-left p {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .api-key-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 12px;
+    }
+
+    .api-key-wrap label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .api-key-wrap input {
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-size: 0.8rem;
+      width: 220px;
+      font-family: monospace;
+    }
+
+    select, .btn {
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 0.82rem;
+      padding: 7px 14px;
+      cursor: pointer;
+      outline: none;
+      transition: border-color .2s;
+    }
+
+    select:hover, .btn:hover { border-color: #4a5568; }
+
+    .btn-primary {
+      background: #3b82f6;
+      border-color: #3b82f6;
+      font-weight: 600;
+    }
+
+    .btn-primary:hover { background: #2563eb; border-color: #2563eb; }
+
+    /* ── Status Bar ── */
+    #status-bar {
+      font-size: 0.78rem;
+      padding: 8px 32px;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+    }
+
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: none;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Main Content ── */
+    .main { padding: 28px 32px 60px; max-width: 1600px; margin: 0 auto; }
+
+    /* ── Category Legend ── */
+    .legend-row {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .legend-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+    }
+
+    /* ── Category Section ── */
+    .category-section { margin-bottom: 40px; }
+
+    .category-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .category-badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 20px;
+    }
+
+    .badge-leading { background: var(--leading-bg); color: var(--leading); border: 1px solid var(--leading-border); }
+    .badge-coincident { background: var(--coincident-bg); color: var(--coincident); border: 1px solid var(--coincident-border); }
+    .badge-lagging { background: var(--lagging-bg); color: var(--lagging); border: 1px solid var(--lagging-border); }
+
+    .category-title { font-size: 1.05rem; font-weight: 600; }
+    .category-desc { font-size: 0.8rem; color: var(--text-muted); }
+
+    /* ── Chart Grid ── */
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+      gap: 20px;
+    }
+
+    .chart-card {
+      background: var(--surface);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      padding: 20px;
+      transition: border-color .2s;
+    }
+
+    .chart-card:hover { border-color: #3a4055; }
+
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .card-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
+    .card-subtitle {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 3px;
+    }
+
+    .card-stat {
+      text-align: right;
+    }
+
+    .stat-value {
+      font-size: 1.3rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .stat-change {
+      font-size: 0.72rem;
+      margin-top: 2px;
+    }
+
+    .stat-change.up { color: #34d399; }
+    .stat-change.down { color: #f87171; }
+    .stat-change.flat { color: var(--text-muted); }
+
+    .chart-wrap {
+      position: relative;
+      height: 180px;
+    }
+
+    .chart-wrap canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    .chart-placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      z-index: 2;
+    }
+
+    /* ── Error banner ── */
+    .error-banner {
+      background: rgba(248, 113, 113, 0.1);
+      border: 1px solid rgba(248, 113, 113, 0.3);
+      color: var(--error);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 0.82rem;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center;
+      padding: 20px;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border);
+    }
+
+    @media (max-width: 768px) {
+      .header { padding: 16px; }
+      .main { padding: 16px 16px 40px; }
+      .chart-grid { grid-template-columns: 1fr; }
+      .api-key-wrap input { width: 140px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header class="header">
+  <div class="header-left">
+    <h1>🇺🇸 美國經濟指標儀表板</h1>
+    <p>資料來源：FRED — Federal Reserve Bank of St. Louis</p>
+  </div>
+  <div class="header-right">
+    <div class="api-key-wrap">
+      <label for="api-key">FRED API Key</label>
+      <input type="password" id="api-key" placeholder="貼上您的 32 字元 API Key" autocomplete="off" />
+    </div>
+    <select id="year-range">
+      <option value="4">近 4 年</option>
+      <option value="6">近 6 年</option>
+      <option value="10">近 10 年</option>
+      <option value="20">近 20 年</option>
+    </select>
+    <button class="btn btn-primary" id="load-btn">載入資料</button>
+  </div>
+</header>
+
+<!-- ── Status Bar ── -->
+<div id="status-bar">
+  <div class="spinner" id="spinner"></div>
+  <span id="status-text">請輸入 FRED API Key 後點擊「載入資料」</span>
+</div>
+
+<!-- ── Main ── -->
+<main class="main">
+  <div id="error-banner" class="error-banner"></div>
+
+  <div class="legend-row">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--leading)"></div>領先指標 — 預測景氣方向</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--coincident)"></div>實時指標 — 反映當前景氣</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--lagging)"></div>落後指標 — 確認景氣轉折</div>
+  </div>
+
+  <!-- Leading -->
+  <section class="category-section" id="section-leading">
+    <div class="category-header">
+      <span class="category-badge badge-leading">Leading</span>
+      <div>
+        <div class="category-title">領先指標</div>
+        <div class="category-desc">通常在景氣循環轉折前數個月先行反映，可用於預測未來走勢</div>
+      </div>
+    </div>
+    <div class="chart-grid" id="grid-leading"></div>
+  </section>
+
+  <!-- Coincident -->
+  <section class="category-section" id="section-coincident">
+    <div class="category-header">
+      <span class="category-badge badge-coincident">Coincident</span>
+      <div>
+        <div class="category-title">實時指標</div>
+        <div class="category-desc">與景氣循環同步變動，反映當前經濟實際狀況</div>
+      </div>
+    </div>
+    <div class="chart-grid" id="grid-coincident"></div>
+  </section>
+
+  <!-- Lagging -->
+  <section class="category-section" id="section-lagging">
+    <div class="category-header">
+      <span class="category-badge badge-lagging">Lagging</span>
+      <div>
+        <div class="category-title">落後指標</div>
+        <div class="category-desc">在景氣轉折後才發生變化，用於確認景氣循環已進入新階段</div>
+      </div>
+    </div>
+    <div class="chart-grid" id="grid-lagging"></div>
+  </section>
+</main>
+
+<footer>
+  資料由 <a href="https://fred.stlouisfed.org" target="_blank" style="color:#3b82f6">FRED® API</a> 提供 &nbsp;·&nbsp;
+  Federal Reserve Bank of St. Louis &nbsp;·&nbsp;
+  圖表每次手動點擊「載入資料」更新
+</footer>
+
+<script>
+// ── Indicator Definitions ──────────────────────────────────────────────────
+const INDICATORS = {
+  leading: [
+    {
+      id: 'DGS10',
+      title: '10年期國債殖利率',
+      subtitle: '10-Year Treasury Yield',
+      unit: '%',
+      color: '#38bdf8',
+      decimals: 2,
+      note: '殖利率曲線倒掛常預示衰退'
+    },
+    {
+      id: 'HOUST',
+      title: '新屋開工數',
+      subtitle: 'Housing Starts',
+      unit: '千戶',
+      color: '#818cf8',
+      decimals: 0,
+      note: '房市動向領先消費與就業'
+    },
+    {
+      id: 'M2SL',
+      title: 'M2 貨幣供給',
+      subtitle: 'M2 Money Supply',
+      unit: '十億美元',
+      color: '#a78bfa',
+      decimals: 0,
+      note: '貨幣擴張/收縮先於通膨及景氣'
+    }
+  ],
+  coincident: [
+    {
+      id: 'GDP',
+      title: '國內生產毛額',
+      subtitle: 'Gross Domestic Product',
+      unit: '十億美元',
+      color: '#34d399',
+      decimals: 0,
+      note: '衡量整體經濟規模的核心指標'
+    },
+    {
+      id: 'INDPRO',
+      title: '工業生產指數',
+      subtitle: 'Industrial Production',
+      unit: '指數',
+      color: '#2dd4bf',
+      decimals: 2,
+      note: '製造業、礦業、公共事業產出'
+    },
+    {
+      id: 'PAYEMS',
+      title: '非農就業人數',
+      subtitle: 'Nonfarm Payrolls',
+      unit: '千人',
+      color: '#4ade80',
+      decimals: 0,
+      note: '每月發布，反映勞動市場即時狀況'
+    },
+    {
+      id: 'RSAFS',
+      title: '零售銷售',
+      subtitle: 'Retail Sales',
+      unit: '百萬美元',
+      color: '#86efac',
+      decimals: 0,
+      note: '消費支出占 GDP 約 70%'
+    }
+  ],
+  lagging: [
+    {
+      id: 'UNRATE',
+      title: '失業率',
+      subtitle: 'Unemployment Rate',
+      unit: '%',
+      color: '#fb923c',
+      decimals: 1,
+      note: '景氣復甦後企業才開始增聘'
+    },
+    {
+      id: 'CPIAUCSL',
+      title: '消費者物價指數',
+      subtitle: 'CPI (All Urban Consumers)',
+      unit: '指數',
+      color: '#fbbf24',
+      decimals: 2,
+      note: '通膨在景氣高峰後繼續上升'
+    },
+    {
+      id: 'FEDFUNDS',
+      title: '聯邦基金利率',
+      subtitle: 'Federal Funds Rate',
+      unit: '%',
+      color: '#f97316',
+      decimals: 2,
+      note: 'Fed 升降息滯後於景氣轉折'
+    }
+  ]
+};
+
+// ── State ─────────────────────────────────────────────────────────────────
+const charts = {};
+
+// ── DOM refs ──────────────────────────────────────────────────────────────
+const apiKeyInput  = document.getElementById('api-key');
+const yearSelect   = document.getElementById('year-range');
+const loadBtn      = document.getElementById('load-btn');
+const statusText   = document.getElementById('status-text');
+const spinner      = document.getElementById('spinner');
+const errorBanner  = document.getElementById('error-banner');
+
+// ── Persist API key ───────────────────────────────────────────────────────
+const savedKey = localStorage.getItem('fred_api_key');
+if (savedKey) apiKeyInput.value = savedKey;
+
+apiKeyInput.addEventListener('change', () => {
+  localStorage.setItem('fred_api_key', apiKeyInput.value.trim());
+});
+
+// ── Build chart cards (skeleton) ──────────────────────────────────────────
+function buildCards() {
+  for (const [category, indicators] of Object.entries(INDICATORS)) {
+    const grid = document.getElementById(`grid-${category}`);
+    grid.innerHTML = '';
+    for (const ind of indicators) {
+      const card = document.createElement('div');
+      card.className = 'chart-card';
+      card.id = `card-${ind.id}`;
+      card.innerHTML = `
+        <div class="card-header">
+          <div>
+            <div class="card-title">${ind.title}</div>
+            <div class="card-subtitle">${ind.subtitle} · ${ind.id}</div>
+          </div>
+          <div class="card-stat">
+            <div class="stat-value" id="val-${ind.id}">—</div>
+            <div class="stat-change flat" id="chg-${ind.id}">—</div>
+          </div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart-${ind.id}"></canvas>
+          <div class="chart-placeholder" id="placeholder-${ind.id}">等待載入…</div>
+        </div>
+      `;
+      grid.appendChild(card);
+    }
+  }
+}
+
+// ── Fetch FRED series observations ────────────────────────────────────────
+async function fetchSeries(seriesId, apiKey, startDate) {
+  const url = new URL('https://api.stlouisfed.org/fred/series/observations');
+  url.searchParams.set('series_id', seriesId);
+  url.searchParams.set('api_key', apiKey);
+  url.searchParams.set('file_type', 'json');
+  url.searchParams.set('observation_start', startDate);
+  url.searchParams.set('sort_order', 'asc');
+
+  const res = await fetch(url.toString());
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error_message || `HTTP ${res.status}`);
+  }
+  const json = await res.json();
+  return json.observations
+    .filter(o => o.value !== '.')
+    .map(o => ({ x: o.date, y: parseFloat(o.value) }));
+}
+
+// ── Render chart ──────────────────────────────────────────────────────────
+function renderChart(ind, data) {
+  const placeholder = document.getElementById(`placeholder-${ind.id}`);
+  const canvas      = document.getElementById(`chart-${ind.id}`);
+
+  // Destroy old chart if exists
+  if (charts[ind.id]) {
+    charts[ind.id].destroy();
+    delete charts[ind.id];
+  }
+
+  placeholder.style.display = 'none';
+
+  const ctx = canvas.getContext('2d');
+
+  charts[ind.id] = new Chart(ctx, {
+    type: 'line',
+    data: {
+      datasets: [{
+        data,
+        borderColor: ind.color,
+        backgroundColor: ind.color + '18',
+        borderWidth: 1.8,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        fill: true,
+        tension: 0.3
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400 },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1a1d27',
+          borderColor: '#2e3347',
+          borderWidth: 1,
+          titleColor: '#8892a4',
+          bodyColor: '#e2e8f0',
+          padding: 10,
+          callbacks: {
+            label: ctx => ` ${ctx.parsed.y.toFixed(ind.decimals)} ${ind.unit}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'time',
+          time: { unit: 'month', tooltipFormat: 'yyyy-MM-dd', displayFormats: { month: 'yy-MM' } },
+          grid: { color: '#1e2236' },
+          ticks: { color: '#4a5568', maxTicksLimit: 8, font: { size: 11 } }
+        },
+        y: {
+          grid: { color: '#1e2236' },
+          ticks: { color: '#4a5568', font: { size: 11 },
+            callback: v => v.toLocaleString('en-US', { maximumFractionDigits: ind.decimals })
+          }
+        }
+      }
+    }
+  });
+}
+
+// ── Update stat values ────────────────────────────────────────────────────
+function updateStats(ind, data) {
+  if (data.length === 0) return;
+
+  const latest   = data[data.length - 1];
+  const prev     = data[data.length - 2];
+
+  const valEl = document.getElementById(`val-${ind.id}`);
+  const chgEl = document.getElementById(`chg-${ind.id}`);
+
+  valEl.textContent = latest.y.toLocaleString('en-US', {
+    minimumFractionDigits: ind.decimals,
+    maximumFractionDigits: ind.decimals
+  }) + ' ' + ind.unit;
+
+  if (prev) {
+    const diff = latest.y - prev.y;
+    const pct  = ((diff / Math.abs(prev.y)) * 100).toFixed(2);
+    const sign = diff > 0 ? '+' : '';
+    chgEl.textContent = `${sign}${diff.toFixed(ind.decimals)} (${sign}${pct}%) vs 前期`;
+    chgEl.className = 'stat-change ' + (diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat');
+  }
+}
+
+// ── Show error on card ────────────────────────────────────────────────────
+function showCardError(id, msg) {
+  const placeholder = document.getElementById(`placeholder-${id}`);
+  if (placeholder) {
+    placeholder.style.display = 'flex';
+    placeholder.style.color = '#f87171';
+    placeholder.textContent = `載入失敗：${msg}`;
+  }
+}
+
+// ── Main load flow ────────────────────────────────────────────────────────
+async function loadAll() {
+  const apiKey = apiKeyInput.value.trim();
+  if (!apiKey) {
+    showError('請先輸入 FRED API Key（可於 https://fredaccount.stlouisfed.org 免費申請）');
+    return;
+  }
+  localStorage.setItem('fred_api_key', apiKey);
+
+  hideError();
+  buildCards();
+  setLoading(true, '正在從 FRED API 載入資料…');
+
+  const years = parseInt(yearSelect.value, 10);
+  const start = new Date();
+  start.setFullYear(start.getFullYear() - years);
+  const startDate = start.toISOString().split('T')[0];
+
+  const allIndicators = [
+    ...INDICATORS.leading,
+    ...INDICATORS.coincident,
+    ...INDICATORS.lagging
+  ];
+
+  let loaded = 0;
+  const total = allIndicators.length;
+
+  // Fetch all in parallel with a small throttle
+  const tasks = allIndicators.map(async (ind, i) => {
+    // Stagger requests to stay under 2 req/s limit
+    await delay(i * 520);
+    try {
+      const data = await fetchSeries(ind.id, apiKey, startDate);
+      renderChart(ind, data);
+      updateStats(ind, data);
+      loaded++;
+      setLoading(true, `已載入 ${loaded} / ${total} 個指標…`);
+    } catch (err) {
+      showCardError(ind.id, err.message);
+      loaded++;
+      setLoading(true, `已載入 ${loaded} / ${total} 個指標（部分失敗）…`);
+    }
+  });
+
+  await Promise.all(tasks);
+  setLoading(false, `全部載入完成 ✓  資料範圍：${startDate} 至今`);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function setLoading(isLoading, msg) {
+  spinner.style.display = isLoading ? 'block' : 'none';
+  statusText.textContent = msg;
+  loadBtn.disabled = isLoading;
+  loadBtn.textContent = isLoading ? '載入中…' : '載入資料';
+}
+
+function showError(msg) {
+  errorBanner.textContent = msg;
+  errorBanner.style.display = 'block';
+}
+
+function hideError() {
+  errorBanner.style.display = 'none';
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+buildCards();
+loadBtn.addEventListener('click', loadAll);
+
+// Auto-load if key already saved (defer one frame so canvas layout is ready)
+if (savedKey) {
+  requestAnimationFrame(() => loadAll());
+}
+</script>
+</body>
+</html>
