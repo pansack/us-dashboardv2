@@ -69,31 +69,6 @@
       flex-wrap: wrap;
     }
 
-    .api-key-wrap {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 6px 12px;
-    }
-
-    .api-key-wrap label {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      white-space: nowrap;
-    }
-
-    .api-key-wrap input {
-      background: transparent;
-      border: none;
-      outline: none;
-      color: var(--text);
-      font-size: 0.8rem;
-      width: 220px;
-      font-family: monospace;
-    }
 
     select, .btn {
       border-radius: 7px;
@@ -297,7 +272,6 @@
       .header { padding: 16px; }
       .main { padding: 16px 16px 40px; }
       .chart-grid { grid-template-columns: 1fr; }
-      .api-key-wrap input { width: 140px; }
     }
   </style>
 </head>
@@ -307,20 +281,16 @@
 <header class="header">
   <div class="header-left">
     <h1>🇺🇸 美國經濟指標儀表板</h1>
-    <p>資料來源：FRED — Federal Reserve Bank of St. Louis</p>
+    <p>資料來源：FRED — Federal Reserve Bank of St. Louis &nbsp;·&nbsp; <span id="last-updated">—</span></p>
   </div>
   <div class="header-right">
-    <div class="api-key-wrap">
-      <label for="api-key">FRED API Key</label>
-      <input type="password" id="api-key" placeholder="貼上您的 32 字元 API Key" autocomplete="off" />
-    </div>
     <select id="year-range">
       <option value="4">近 4 年</option>
       <option value="6">近 6 年</option>
       <option value="10">近 10 年</option>
       <option value="20">近 20 年</option>
     </select>
-    <button class="btn btn-primary" id="load-btn">載入資料</button>
+    <button class="btn btn-primary" id="load-btn">重新整理</button>
   </div>
 </header>
 
@@ -488,20 +458,12 @@ const INDICATORS = {
 const charts = {};
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
-const apiKeyInput  = document.getElementById('api-key');
 const yearSelect   = document.getElementById('year-range');
 const loadBtn      = document.getElementById('load-btn');
 const statusText   = document.getElementById('status-text');
 const spinner      = document.getElementById('spinner');
 const errorBanner  = document.getElementById('error-banner');
-
-// ── Persist API key ───────────────────────────────────────────────────────
-const savedKey = localStorage.getItem('fred_api_key');
-if (savedKey) apiKeyInput.value = savedKey;
-
-apiKeyInput.addEventListener('change', () => {
-  localStorage.setItem('fred_api_key', apiKeyInput.value.trim());
-});
+const lastUpdated  = document.getElementById('last-updated');
 
 // ── Build chart cards (skeleton) ──────────────────────────────────────────
 function buildCards() {
@@ -533,23 +495,13 @@ function buildCards() {
   }
 }
 
-// ── Fetch FRED series observations ────────────────────────────────────────
-async function fetchSeries(seriesId, apiKey, startDate) {
-  const url = new URL('https://api.stlouisfed.org/fred/series/observations');
-  url.searchParams.set('series_id', seriesId);
-  url.searchParams.set('api_key', apiKey);
-  url.searchParams.set('file_type', 'json');
-  url.searchParams.set('observation_start', startDate);
-  url.searchParams.set('sort_order', 'asc');
-
-  const res = await fetch(url.toString());
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error_message || `HTTP ${res.status}`);
-  }
+// ── Fetch local JSON (pre-fetched by GitHub Actions) ─────────────────────
+async function fetchSeries(seriesId, cutoffDate) {
+  const res = await fetch(`./data/${seriesId}.json`);
+  if (!res.ok) throw new Error(`找不到 data/${seriesId}.json（請先執行 Fetch FRED Data workflow）`);
   const json = await res.json();
   return json.observations
-    .filter(o => o.value !== '.')
+    .filter(o => o.value !== '.' && o.date >= cutoffDate)
     .map(o => ({ x: o.date, y: parseFloat(o.value) }));
 }
 
@@ -655,21 +607,23 @@ function showCardError(id, msg) {
 
 // ── Main load flow ────────────────────────────────────────────────────────
 async function loadAll() {
-  const apiKey = apiKeyInput.value.trim();
-  if (!apiKey) {
-    showError('請先輸入 FRED API Key（可於 https://fredaccount.stlouisfed.org 免費申請）');
-    return;
-  }
-  localStorage.setItem('fred_api_key', apiKey);
-
   hideError();
   buildCards();
-  setLoading(true, '正在從 FRED API 載入資料…');
+  setLoading(true, '正在載入資料…');
+
+  // Load last-updated meta
+  fetch('./data/meta.json')
+    .then(r => r.json())
+    .then(m => {
+      const d = new Date(m.fetched_at);
+      lastUpdated.textContent = '資料更新：' + d.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
+    })
+    .catch(() => {});
 
   const years = parseInt(yearSelect.value, 10);
-  const start = new Date();
-  start.setFullYear(start.getFullYear() - years);
-  const startDate = start.toISOString().split('T')[0];
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - years);
+  const cutoffDate = cutoff.toISOString().split('T')[0];
 
   const allIndicators = [
     ...INDICATORS.leading,
@@ -680,35 +634,29 @@ async function loadAll() {
   let loaded = 0;
   const total = allIndicators.length;
 
-  // Fetch all in parallel with a small throttle
-  const tasks = allIndicators.map(async (ind, i) => {
-    // Stagger requests to stay under 2 req/s limit
-    await delay(i * 520);
+  // All files are local — fetch in parallel, no rate limiting needed
+  const tasks = allIndicators.map(async ind => {
     try {
-      const data = await fetchSeries(ind.id, apiKey, startDate);
+      const data = await fetchSeries(ind.id, cutoffDate);
       renderChart(ind, data);
       updateStats(ind, data);
-      loaded++;
-      setLoading(true, `已載入 ${loaded} / ${total} 個指標…`);
     } catch (err) {
       showCardError(ind.id, err.message);
-      loaded++;
-      setLoading(true, `已載入 ${loaded} / ${total} 個指標（部分失敗）…`);
     }
+    loaded++;
+    setLoading(true, `已載入 ${loaded} / ${total} 個指標…`);
   });
 
   await Promise.all(tasks);
-  setLoading(false, `全部載入完成 ✓  資料範圍：${startDate} 至今`);
+  setLoading(false, `全部載入完成 ✓  顯示近 ${years} 年資料`);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
-function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
-
 function setLoading(isLoading, msg) {
   spinner.style.display = isLoading ? 'block' : 'none';
   statusText.textContent = msg;
   loadBtn.disabled = isLoading;
-  loadBtn.textContent = isLoading ? '載入中…' : '載入資料';
+  loadBtn.textContent = isLoading ? '載入中…' : '重新整理';
 }
 
 function showError(msg) {
@@ -723,11 +671,8 @@ function hideError() {
 // ── Init ──────────────────────────────────────────────────────────────────
 buildCards();
 loadBtn.addEventListener('click', loadAll);
-
-// Auto-load if key already saved (defer one frame so canvas layout is ready)
-if (savedKey) {
-  requestAnimationFrame(() => loadAll());
-}
+yearSelect.addEventListener('change', loadAll);
+requestAnimationFrame(() => loadAll());
 </script>
 </body>
 </html>
