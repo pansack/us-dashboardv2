@@ -29,7 +29,7 @@ jobs:
         run: |
           mkdir -p data
           START_DATE="2000-01-01"
-          SERIES="DGS10 HOUST M2SL GDP INDPRO PAYEMS RSAFS UNRATE CPIAUCSL FEDFUNDS"
+          SERIES="DGS10 HOUST M2SL A191RL1Q225SBEA INDPRO PAYEMS RSAFS UNRATE CPIAUCSL FEDFUNDS"
           for ID in $SERIES; do
             echo "Fetching $ID..."
             curl -sf "https://api.stlouisfed.org/fred/series/observations?series_id=${ID}&api_key=${FRED_API_KEY}&file_type=json&observation_start=${START_DATE}&sort_order=asc" \
